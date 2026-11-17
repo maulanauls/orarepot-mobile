@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "430733137332",
+    "project_id": "ora-repot",
+    "storage_bucket": "ora-repot.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:430733137332:android:032bdc489cf1a8a8c40ee1",
+        "android_client_info": {
+          "package_name": "com.tikngroup.orarepot.orarepot.sit"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDv3RDRpjk1zeF3yYlTwTcj1ZyI6bNmQ3o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

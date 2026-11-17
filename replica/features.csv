@@ -1,0 +1,19 @@
+feature,area,priority,original,clone,notes
+Home greeting + notification,home,must,yes,yes,Design S01
+Balance card with points,home,must,yes,yes,Gradient wallet card + lime brand
+Quick actions (topup transfer withdraw scan),home,must,yes,yes,Stub toasts until backend
+Monthly stats banner,home,should,yes,yes,Dark performance strip
+Service grid 8 tiles,home,must,yes,yes,Pulsa opens S02; others stub
+Bottom nav Home History Customer Profile,navigation,must,yes,yes,Four tabs
+Pulsa phone input + provider chip,pulsa,must,yes,yes,Text chip only (no licensed logos)
+Pulsa / Internet tabs,pulsa,must,yes,yes,S02
+Denomination grid select,pulsa,must,yes,yes,Black selected card
+Continue to review,pulsa,must,yes,yes,Primary CTA
+Order review sheet,transaction,must,yes,partial,Local bottom sheet until gateway
+History date filters,history,should,yes,yes,From/To date pickers
+History summary chips,history,should,yes,yes,In / net / out
+History list by date,history,must,yes,yes,Seed rows
+Customer / support tab,support,could,yes,yes,Stub CS + FAQ
+Profile / account tab,identity,should,yes,partial,Guest CTA until auth
+Live biller catalog,backend,must,yes,no,Requires official API
+Provider-owned logos,assets,skip,yes,skip,Text chips only — no licensed marks

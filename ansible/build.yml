@@ -1,0 +1,183 @@
+---
+- name: Build OraRepot Flutter application
+  hosts: build_hosts
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "{{ playbook_dir }}/.."
+    output_dir: "{{ project_dir }}/dist/{{ app_env | lower }}"
+    flavor: "{{ app_env | lower }}"
+    artifact_format: "{{ build_format | default('apk') }}"
+    # Optional -e overrides (do NOT self-assign app_version/app_build/google_client_id
+    # here — that causes "Recursive loop detected in template"):
+    #   -e app_version=1.2.3
+    #   -e app_version=1.2.3 -e app_build=42
+    #   -e app_version=1.2.3+42
+    #   -e api_base_url=https://api.orarepot.com
+    #   -e google_client_id=....apps.googleusercontent.com
+    # If version omitted, Flutter uses pubspec.yaml `version:` (currently 1.0.0+1).
+    # Default Google web client = orappob NEXT_PUBLIC_GOOGLE_CLIENT_ID.
+    default_google_client_id: "569539983389-ue1egs1g4rivgo1csjn9ci734h1qopdc.apps.googleusercontent.com"
+    api_urls:
+      # Valid TLS on api.orarepot.com. tikngroup.com hosts present a cert for
+      # topup.orarepot.com and break Flutter HTTPS (CERTIFICATE_VERIFY_FAILED).
+      SIT: "https://api.orarepot.com"
+      UAT: "https://api.orarepot.com"
+      PROD: "https://api.orarepot.com"
+  pre_tasks:
+    - name: Validate environment name
+      ansible.builtin.assert:
+        that:
+          - app_env | upper in ['SIT', 'UAT', 'PROD']
+        fail_msg: "app_env must be one of SIT, UAT, PROD"
+
+    - name: Validate artifact format
+      ansible.builtin.assert:
+        that:
+          - artifact_format in ['apk', 'appbundle']
+        fail_msg: "build_format must be apk or appbundle"
+
+    - name: Require release signing inputs for PROD
+      ansible.builtin.assert:
+        that:
+          - lookup('env', 'ORAREPOT_KEYSTORE_FILE') | length > 0
+          - lookup('env', 'ORAREPOT_KEYSTORE_PASSWORD') | length > 0
+          - lookup('env', 'ORAREPOT_KEY_ALIAS') | length > 0
+          - lookup('env', 'ORAREPOT_KEY_PASSWORD') | length > 0
+        fail_msg: >-
+          PROD requires ORAREPOT_KEYSTORE_FILE, ORAREPOT_KEYSTORE_PASSWORD,
+          ORAREPOT_KEY_ALIAS, and ORAREPOT_KEY_PASSWORD in the CI environment.
+      when: app_env | upper == 'PROD'
+
+    - name: Verify PROD keystore exists
+      ansible.builtin.stat:
+        path: "{{ lookup('env', 'ORAREPOT_KEYSTORE_FILE') }}"
+      register: prod_keystore
+      when: app_env | upper == 'PROD'
+
+    - name: Reject missing PROD keystore file
+      ansible.builtin.assert:
+        that:
+          - prod_keystore.stat.exists
+          - prod_keystore.stat.isreg
+        fail_msg: "ORAREPOT_KEYSTORE_FILE does not point to a readable keystore file"
+      when: app_env | upper == 'PROD'
+
+    - name: Create output directory
+      ansible.builtin.file:
+        path: "{{ output_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Normalize optional version / API extras
+      ansible.builtin.set_fact:
+        version_raw: "{{ app_version | default('') | string | trim }}"
+        build_raw: "{{ app_build | default('') | string | trim }}"
+        resolved_api_base_url: >-
+          {{
+            (api_base_url | default(app_base_url | default('')) | string | trim)
+            if ((api_base_url | default(app_base_url | default('')) | string | trim) | length) > 0
+            else api_urls[app_env | upper]
+          }}
+
+    - name: Resolve build-name / build-number from app_version
+      ansible.builtin.set_fact:
+        resolved_build_name: >-
+          {{
+            (version_raw.split('+')[0] if '+' in version_raw else version_raw)
+            if (version_raw | length) > 0 else ''
+          }}
+        resolved_build_number: >-
+          {{
+            build_raw
+            if (build_raw | length) > 0
+            else (
+              (version_raw.split('+')[1] if '+' in version_raw else '')
+              if (version_raw | length) > 0 else ''
+            )
+          }}
+
+    - name: Compose Flutter version flags
+      ansible.builtin.set_fact:
+        flutter_version_flags: >-
+          {{
+            (
+              ('--build-name ' ~ resolved_build_name) if (resolved_build_name | length) > 0 else ''
+            )
+            ~
+            (
+              (' --build-number ' ~ resolved_build_number) if (resolved_build_number | length) > 0 else ''
+            )
+          }}
+
+  tasks:
+    - name: Install Flutter dependencies
+      ansible.builtin.command: flutter pub get
+      args:
+        chdir: "{{ project_dir }}"
+
+    # Flutter 3.38+/Dart 3.10 FVM installs ship analysis_server_aot only;
+    # `flutter analyze` still looks for analysis_server.dart.snapshot and crashes.
+    - name: Analyze Dart code
+      ansible.builtin.command: dart analyze
+      args:
+        chdir: "{{ project_dir }}"
+
+    - name: Run Flutter tests
+      ansible.builtin.command: flutter test
+      args:
+        chdir: "{{ project_dir }}"
+
+    - name: Build Android APK
+      ansible.builtin.command: >-
+        flutter build apk
+        --flavor {{ flavor }}
+        {{ flutter_version_flags }}
+        --dart-define=APP_ENV={{ app_env | upper }}
+        --dart-define=API_BASE_URL={{ resolved_api_base_url }}
+        --dart-define=APP_NAME=OraRepot
+        --dart-define=GOOGLE_CLIENT_ID={{ google_client_id | default(default_google_client_id) }}
+      args:
+        chdir: "{{ project_dir }}"
+      when: artifact_format == 'apk'
+
+    - name: Build Android App Bundle
+      ansible.builtin.command: >-
+        flutter build appbundle
+        --flavor {{ flavor }}
+        {{ flutter_version_flags }}
+        --dart-define=APP_ENV={{ app_env | upper }}
+        --dart-define=API_BASE_URL={{ resolved_api_base_url }}
+        --dart-define=APP_NAME=OraRepot
+        --dart-define=GOOGLE_CLIENT_ID={{ google_client_id | default(default_google_client_id) }}
+      args:
+        chdir: "{{ project_dir }}"
+      when: artifact_format == 'appbundle'
+
+    - name: Copy APK artifact
+      ansible.builtin.copy:
+        src: "{{ project_dir }}/build/app/outputs/flutter-apk/app-{{ flavor }}-release.apk"
+        dest: "{{ output_dir }}/orarepot-{{ app_env | upper }}.apk"
+        remote_src: true
+      when: artifact_format == 'apk'
+
+    - name: Copy App Bundle artifact
+      ansible.builtin.copy:
+        src: "{{ project_dir }}/build/app/outputs/bundle/{{ flavor }}Release/app-{{ flavor }}-release.aab"
+        dest: "{{ output_dir }}/orarepot-{{ app_env | upper }}.aab"
+        remote_src: true
+      when: artifact_format == 'appbundle'
+
+    - name: Write build metadata
+      ansible.builtin.copy:
+        dest: "{{ output_dir }}/build-metadata.txt"
+        mode: '0644'
+        content: |
+          application=orarepot
+          environment={{ app_env | upper }}
+          flavor={{ flavor }}
+          application_id=com.tikngroup.orarepot.orarepot.{{ flavor }}
+          api_base_url={{ resolved_api_base_url }}
+          artifact={{ artifact_format }}
+          build_name={{ resolved_build_name if (resolved_build_name | length) > 0 else '(pubspec)' }}
+          build_number={{ resolved_build_number if (resolved_build_number | length) > 0 else '(pubspec)' }}

@@ -1,0 +1,6 @@
+# Copy to android/key.properties for local release builds.
+# The real file is ignored by .gitignore. Prefer CI environment variables for PROD.
+ORAREPOT_KEYSTORE_FILE=/absolute/path/to/orarepot-upload.jks
+ORAREPOT_KEYSTORE_PASSWORD=replace-me
+ORAREPOT_KEY_ALIAS=orarepot-upload
+ORAREPOT_KEY_PASSWORD=replace-me

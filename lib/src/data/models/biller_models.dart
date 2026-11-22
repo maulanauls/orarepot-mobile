@@ -249,11 +249,17 @@ class BillerUser {
 
   factory BillerUser.fromJson(Map<String, dynamic> json) {
     return BillerUser(
-      usersIdf: '${json['users_idf'] ?? ''}',
-      usersName: json['users_fullname'] as String?,
-      usersEmail: json['users_email'] as String?,
-      userPhonenumber: json['user_phonenumber'] as String?,
+      usersIdf: _stringField(json['users_idf']) ?? '',
+      usersName: _stringField(json['users_fullname']),
+      usersEmail: _stringField(json['users_email']),
+      userPhonenumber: _stringField(json['user_phonenumber']),
     );
+  }
+
+  static String? _stringField(dynamic value) {
+    if (value == null) return null;
+    final text = '$value'.trim();
+    return text.isEmpty ? null : text;
   }
 
   Map<String, dynamic> toJson() => {
@@ -281,4 +287,35 @@ class StoreAuth {
         'token': token,
         'user': user.toJson(),
       };
+}
+
+/// WhatsApp OTP challenge from `POST /biller/auth/enter` when `otp_required`.
+class OtpChallenge {
+  const OtpChallenge({
+    required this.challenge,
+    this.expiresIn = 300,
+    this.resendIn = 60,
+  });
+
+  final String challenge;
+  final int expiresIn;
+  final int resendIn;
+
+  factory OtpChallenge.fromJson(Map<String, dynamic> json) {
+    int asInt(dynamic v, int fallback) =>
+        v is num ? v.round() : int.tryParse('$v') ?? fallback;
+    return OtpChallenge(
+      challenge: '${json['challenge'] ?? ''}'.trim(),
+      expiresIn: asInt(json['expires_in'], 300),
+      resendIn: asInt(json['resend_in'], 60),
+    );
+  }
+}
+
+class OtpRequiredException implements Exception {
+  OtpRequiredException(this.challenge);
+  final OtpChallenge challenge;
+
+  @override
+  String toString() => 'OTP verification required';
 }

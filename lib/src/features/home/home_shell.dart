@@ -44,6 +44,7 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final ora = context.ora;
+    final authStore = AppScope.of(context).authStore;
     final pages = [
       BerandaPage(config: widget.config),
       const HistoryPage(),
@@ -51,46 +52,51 @@ class _HomeShellState extends State<HomeShell> {
       const ProfilPage(),
     ];
 
-    return Scaffold(
-      backgroundColor: ora.bg,
-      body: IndexedStack(index: selectedTab, children: pages),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          color: ora.panel2,
-          border: Border(top: BorderSide(color: ora.line)),
-        ),
-        child: SafeArea(
-          child: BottomNavigationBar(
-            currentIndex: selectedTab,
-            onTap: _onTabTap,
-            backgroundColor: ora.panel2,
-            selectedItemColor: ora.lime,
-            unselectedItemColor: ora.muted2,
-            items: const [
-              BottomNavigationBarItem(
-                icon: Icon(Icons.home_outlined),
-                activeIcon: Icon(Icons.home_rounded),
-                label: 'Home',
+    return ListenableBuilder(
+      listenable: authStore,
+      builder: (context, _) {
+        return Scaffold(
+          backgroundColor: ora.bg,
+          body: IndexedStack(index: selectedTab, children: pages),
+          bottomNavigationBar: Container(
+            decoration: BoxDecoration(
+              color: ora.panel2,
+              border: Border(top: BorderSide(color: ora.line)),
+            ),
+            child: SafeArea(
+              child: BottomNavigationBar(
+                currentIndex: selectedTab,
+                onTap: _onTabTap,
+                backgroundColor: ora.panel2,
+                selectedItemColor: ora.lime,
+                unselectedItemColor: ora.muted2,
+                items: const [
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.home_outlined),
+                    activeIcon: Icon(Icons.home_rounded),
+                    label: 'Beranda',
+                  ),
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.receipt_long_outlined),
+                    activeIcon: Icon(Icons.receipt_long_rounded),
+                    label: 'Riwayat',
+                  ),
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.support_agent_outlined),
+                    activeIcon: Icon(Icons.support_agent_rounded),
+                    label: 'Bantuan',
+                  ),
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.person_outline_rounded),
+                    activeIcon: Icon(Icons.person_rounded),
+                    label: 'Profil',
+                  ),
+                ],
               ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.receipt_long_outlined),
-                activeIcon: Icon(Icons.receipt_long_rounded),
-                label: 'History',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.support_agent_outlined),
-                activeIcon: Icon(Icons.support_agent_rounded),
-                label: 'Customer',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.person_outline_rounded),
-                activeIcon: Icon(Icons.person_rounded),
-                label: 'Profile',
-              ),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

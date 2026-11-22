@@ -16,16 +16,21 @@ String orderTargetLabel(BillerOrder order) {
   return 'Nomor';
 }
 
+/// Convert any parsed instant to fixed GMT+7 (WIB), independent of device TZ.
+DateTime toWib(DateTime parsed) {
+  return parsed.toUtc().add(const Duration(hours: 7));
+}
+
 String formatOrderTimeWib(String? iso) {
   if (iso == null || iso.trim().isEmpty) return '-';
   final parsed = DateTime.tryParse(iso);
   if (parsed == null) return iso;
-  final local = parsed.toLocal();
-  final d = local.day.toString().padLeft(2, '0');
-  final m = local.month.toString().padLeft(2, '0');
-  final y = local.year;
-  final hh = local.hour.toString().padLeft(2, '0');
-  final mm = local.minute.toString().padLeft(2, '0');
+  final wib = toWib(parsed);
+  final d = wib.day.toString().padLeft(2, '0');
+  final m = wib.month.toString().padLeft(2, '0');
+  final y = wib.year;
+  final hh = wib.hour.toString().padLeft(2, '0');
+  final mm = wib.minute.toString().padLeft(2, '0');
   return '$d/$m/$y $hh:$mm WIB';
 }
 

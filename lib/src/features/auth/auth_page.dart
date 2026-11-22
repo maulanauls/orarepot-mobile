@@ -1,4 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../common_widgets/ora_banner.dart';
@@ -7,6 +11,7 @@ import '../../data/api_client.dart';
 import '../../data/app_scope.dart';
 import '../../data/auth_repository.dart';
 import '../../data/google_auth.dart';
+import '../../data/models/biller_models.dart';
 import '../../theme/ora_palette.dart';
 
 enum AuthMode { signIn, register }
@@ -34,9 +39,19 @@ class _Copy {
     required this.signUp,
     required this.signIn,
     required this.passwordShort,
+    required this.passwordHint,
     required this.passwordMismatch,
     required this.googleFailed,
     required this.googleCancelled,
+    required this.accountNotFound,
+    required this.otpTitle,
+    required this.otpSubtitle,
+    required this.otpLabel,
+    required this.otpSubmit,
+    required this.otpResend,
+    required this.otpResendIn,
+    required this.otpBack,
+    required this.otpInvalid,
   });
 
   final String signInTitle;
@@ -58,16 +73,27 @@ class _Copy {
   final String signUp;
   final String signIn;
   final String passwordShort;
+  final String passwordHint;
   final String passwordMismatch;
   final String googleFailed;
   final String googleCancelled;
+  final String accountNotFound;
+  final String otpTitle;
+  final String otpSubtitle;
+  final String otpLabel;
+  final String otpSubmit;
+  final String otpResend;
+  final String otpResendIn;
+  final String otpBack;
+  final String otpInvalid;
 }
 
 const _copyId = _Copy(
   signInTitle: 'Masuk',
   registerTitle: 'Daftar',
   signInSubtitle: 'Masuk untuk beli pulsa, token, dan voucher dengan harga murah.',
-  registerSubtitle: 'Daftar untuk beli produk digital dengan harga murah.',
+  registerSubtitle:
+      'Daftar dengan nomor WhatsApp. Kami kirim OTP untuk verifikasi pertama.',
   fullName: 'Nama lengkap',
   identifier: 'Email atau WhatsApp',
   identifierPh: 'email@bisnis.com / 08xx',
@@ -83,16 +109,29 @@ const _copyId = _Copy(
   signUp: 'Daftar',
   signIn: 'Masuk',
   passwordShort: 'Kata sandi minimal 8 karakter.',
+  passwordHint: 'Kata sandi minimal 8 karakter.',
   passwordMismatch: 'Kata sandi tidak sama.',
   googleFailed: 'Masuk dengan Google gagal. Coba lagi.',
   googleCancelled: 'Masuk Google dibatalkan.',
+  accountNotFound:
+      'Akun tidak ditemukan. Silakan daftar terlebih dahulu.',
+  otpTitle: 'Verifikasi WhatsApp',
+  otpSubtitle:
+      'Masukkan 6 angka kode yang kami kirim ke WhatsApp {phone}. Kode berlaku 5 menit.',
+  otpLabel: 'Kode verifikasi',
+  otpSubmit: 'Verifikasi',
+  otpResend: 'Kirim ulang',
+  otpResendIn: 'Kirim ulang ({sec})',
+  otpBack: 'Ubah data',
+  otpInvalid: 'Masukkan 6 angka kode dari WhatsApp.',
 );
 
 const _copyEn = _Copy(
   signInTitle: 'Sign in',
   registerTitle: 'Create account',
   signInSubtitle: 'Sign in to buy pulsa, tokens, and vouchers at a low price.',
-  registerSubtitle: 'Create an account to buy digital products for less.',
+  registerSubtitle:
+      'Sign up with WhatsApp. We send an OTP for the first verification.',
   fullName: 'Full name',
   identifier: 'Email or WhatsApp',
   identifierPh: 'email@business.com / 08xx',
@@ -108,9 +147,20 @@ const _copyEn = _Copy(
   signUp: 'Sign up',
   signIn: 'Sign in',
   passwordShort: 'Password must be at least 8 characters.',
+  passwordHint: 'Password must be at least 8 characters.',
   passwordMismatch: 'Passwords do not match.',
   googleFailed: 'Google sign-in failed. Try again.',
   googleCancelled: 'Google sign-in cancelled.',
+  accountNotFound: 'Account not found. Please register first.',
+  otpTitle: 'WhatsApp verification',
+  otpSubtitle:
+      'Enter the 6-digit code we sent to WhatsApp {phone}. Code expires in 5 minutes.',
+  otpLabel: 'Verification code',
+  otpSubmit: 'Verify',
+  otpResend: 'Resend',
+  otpResendIn: 'Resend ({sec})',
+  otpBack: 'Edit details',
+  otpInvalid: 'Enter the 6-digit code from WhatsApp.',
 );
 
 /// Full-screen auth UI matching orappob `/sign-in` and `/register`.
@@ -131,12 +181,20 @@ class _AuthPageState extends State<AuthPage> {
   final identifierController = TextEditingController();
   final passwordController = TextEditingController();
   final confirmController = TextEditingController();
+  final otpController = TextEditingController();
 
   bool obscure = true;
+  bool obscureConfirm = true;
   bool remember = true;
   bool submitting = false;
 
+  OtpChallenge? otpChallenge;
+  String otpPhoneHint = '';
+  int resendIn = 0;
+  Timer? _resendTimer;
+
   _Copy get t => lang == AuthLang.id ? _copyId : _copyEn;
+  bool get _otpStep => otpChallenge != null;
 
   void _showError(String message, {VoidCallback? onRetry}) {
     showOraError(
@@ -149,13 +207,56 @@ class _AuthPageState extends State<AuthPage> {
     );
   }
 
+  void _startResendCountdown(int seconds) {
+    _resendTimer?.cancel();
+    setState(() => resendIn = seconds < 0 ? 0 : seconds);
+    if (resendIn <= 0) return;
+    _resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (resendIn <= 1) {
+        timer.cancel();
+        setState(() => resendIn = 0);
+      } else {
+        setState(() => resendIn -= 1);
+      }
+    });
+  }
+
+  void _beginOtp(OtpChallenge challenge, String phoneHint) {
+    hideOraBanner();
+    otpController.clear();
+    setState(() {
+      otpChallenge = challenge;
+      otpPhoneHint = phoneHint;
+      submitting = false;
+    });
+    _startResendCountdown(challenge.resendIn);
+  }
+
+  void _cancelOtp() {
+    hideOraBanner();
+    _resendTimer?.cancel();
+    otpController.clear();
+    setState(() {
+      otpChallenge = null;
+      otpPhoneHint = '';
+      resendIn = 0;
+      submitting = false;
+    });
+  }
+
   @override
   void dispose() {
     hideOraBanner();
+    _resendTimer?.cancel();
     nameController.dispose();
     identifierController.dispose();
     passwordController.dispose();
     confirmController.dispose();
+    otpController.dispose();
     super.dispose();
   }
 
@@ -185,28 +286,27 @@ class _AuthPageState extends State<AuthPage> {
 
     final auth = AppScope.read(context).auth;
     try {
-      if (mode == AuthMode.register) {
-        await auth.register(
-          fullName: nameController.text.trim(),
-          identifier: identifier,
-          password: password,
-        );
-      } else {
-        try {
-          final split = AuthRepository.splitIdentifier(identifier);
-          await auth.enter(
-            email: split.email,
-            phone: split.phone,
+      final split = AuthRepository.splitIdentifier(identifier);
+      final phoneHint = split.phone.isNotEmpty ? split.phone : identifier;
+      try {
+        if (mode == AuthMode.register) {
+          await auth.register(
+            fullName: nameController.text.trim(),
+            identifier: identifier,
             password: password,
-            remember: remember,
           );
-        } on ApiException {
+        } else {
+          // Sign-in uses /login only — /enter auto-provisions unknown phones.
           await auth.login(
             identifier: identifier,
             password: password,
             remember: remember,
           );
         }
+      } on OtpRequiredException catch (e) {
+        if (!mounted) return;
+        _beginOtp(e.challenge, phoneHint);
+        return;
       }
       if (!mounted) return;
       hideOraBanner();
@@ -214,7 +314,10 @@ class _AuthPageState extends State<AuthPage> {
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() => submitting = false);
-      _showError(e.message, onRetry: _submit);
+      _showError(
+        mode == AuthMode.signIn ? _signInErrorMessage(e) : e.message,
+        onRetry: _submit,
+      );
     } catch (_) {
       if (!mounted) return;
       setState(() => submitting = false);
@@ -225,14 +328,113 @@ class _AuthPageState extends State<AuthPage> {
     }
   }
 
+  /// Map /login failures to a clear "register first" message for unknown accounts.
+  String _signInErrorMessage(ApiException e) {
+    final raw = e.message.toLowerCase();
+    final looksUnknown = e.statusCode == 401 ||
+        raw.contains('salah') ||
+        raw.contains('tidak ditemukan') ||
+        raw.contains('not found') ||
+        raw.contains('invalid');
+    if (looksUnknown) return t.accountNotFound;
+    return e.message;
+  }
+
+  Future<void> _submitOtp() async {
+    final digits = otpController.text.replaceAll(RegExp(r'\D'), '');
+    final challenge = otpChallenge?.challenge.trim() ?? '';
+    FocusScope.of(context).unfocus();
+
+    if (digits.length != 6) {
+      _showError(t.otpInvalid);
+      return;
+    }
+    if (challenge.isEmpty) {
+      _showError(
+        lang == AuthLang.id
+            ? 'Sesi verifikasi habis. Minta kode baru.'
+            : 'Verification session expired. Request a new code.',
+      );
+      return;
+    }
+
+    setState(() => submitting = true);
+    final auth = AppScope.read(context).auth;
+    try {
+      await auth.verifyEnterOtp(
+        challenge: challenge,
+        code: digits,
+        remember: remember,
+      );
+      if (!mounted) return;
+      hideOraBanner();
+      Navigator.pop(context, true);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => submitting = false);
+      _showError(e.message, onRetry: _submitOtp);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => submitting = false);
+      _showError(
+        lang == AuthLang.id
+            ? 'Kode gagal diverifikasi. Coba lagi.'
+            : 'Code verification failed. Try again.',
+        onRetry: _submitOtp,
+      );
+    }
+  }
+
+  Future<void> _resendOtp() async {
+    if (resendIn > 0 || submitting) return;
+    final identifier = identifierController.text.trim();
+    final password = passwordController.text;
+    if (identifier.isEmpty || password.length < 8) {
+      _cancelOtp();
+      return;
+    }
+
+    setState(() => submitting = true);
+    final auth = AppScope.read(context).auth;
+    final split = AuthRepository.splitIdentifier(identifier);
+    try {
+      await auth.login(
+        identifier: identifier,
+        password: password,
+        remember: remember,
+      );
+      // Unexpected: login succeeded without OTP — treat as signed in.
+      if (!mounted) return;
+      hideOraBanner();
+      Navigator.pop(context, true);
+    } on OtpRequiredException catch (e) {
+      if (!mounted) return;
+      _beginOtp(e.challenge, split.phone.isNotEmpty ? split.phone : identifier);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => submitting = false);
+      _showError(_signInErrorMessage(e), onRetry: _resendOtp);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => submitting = false);
+      _showError(
+        lang == AuthLang.id ? 'Gagal kirim ulang kode.' : 'Failed to resend code.',
+        onRetry: _resendOtp,
+      );
+    }
+  }
+
   void _switchMode() {
     hideOraBanner();
+    _cancelOtp();
     setState(() {
       mode = mode == AuthMode.signIn ? AuthMode.register : AuthMode.signIn;
     });
   }
 
   Future<void> _googleSignIn() async {
+    // Google sign-in skips the WhatsApp OTP challenge.
+    if (_otpStep) _cancelOtp();
     FocusScope.of(context).unfocus();
     setState(() => submitting = true);
 
@@ -302,236 +504,380 @@ class _AuthPageState extends State<AuthPage> {
                         ],
                       ),
                       const SizedBox(height: 28),
-                      Text(
-                        mode == AuthMode.signIn ? t.signInTitle : t.registerTitle,
-                        style: GoogleFonts.poppins(
-                          fontSize: 32,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -0.8,
-                          color: ora.text,
+                      if (_otpStep) ...[
+                        Text(
+                          t.otpTitle,
+                          style: GoogleFonts.poppins(
+                            fontSize: 32,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.8,
+                            color: ora.text,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        mode == AuthMode.signIn ? t.signInSubtitle : t.registerSubtitle,
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          height: 1.45,
-                          color: ora.muted,
+                        const SizedBox(height: 8),
+                        Text(
+                          t.otpSubtitle.replaceAll(
+                            '{phone}',
+                            otpPhoneHint.isNotEmpty
+                                ? otpPhoneHint
+                                : identifierController.text.trim(),
+                          ),
+                          style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            height: 1.45,
+                            color: ora.muted,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 24),
-                      if (mode == AuthMode.register) ...[
-                        _FieldLabel(t.fullName),
+                        const SizedBox(height: 24),
+                        _FieldLabel(t.otpLabel),
                         const SizedBox(height: 6),
                         TextField(
-                          controller: nameController,
-                          textInputAction: TextInputAction.next,
-                          style: GoogleFonts.poppins(color: ora.text),
-                          decoration: _inputDecoration(),
+                          controller: otpController,
+                          autofocus: true,
+                          keyboardType: TextInputType.number,
+                          textInputAction: TextInputAction.done,
+                          maxLength: 6,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                            LengthLimitingTextInputFormatter(6),
+                          ],
+                          onSubmitted: (_) => _submitOtp(),
+                          style: GoogleFonts.poppins(
+                            color: ora.text,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 6,
+                          ),
+                          decoration: _inputDecoration(hint: '123456').copyWith(
+                            counterText: '',
+                          ),
                         ),
-                        const SizedBox(height: 14),
-                      ],
-                      _FieldLabel(t.identifier),
-                      const SizedBox(height: 6),
-                      TextField(
-                        controller: identifierController,
-                        keyboardType: TextInputType.emailAddress,
-                        textInputAction: TextInputAction.next,
-                        style: GoogleFonts.poppins(color: ora.text),
-                        decoration: _inputDecoration(hint: t.identifierPh),
-                      ),
-                      const SizedBox(height: 14),
-                      _FieldLabel(t.password),
-                      const SizedBox(height: 6),
-                      TextField(
-                        controller: passwordController,
-                        obscureText: obscure,
-                        textInputAction:
-                            mode == AuthMode.register ? TextInputAction.next : TextInputAction.done,
-                        onSubmitted: (_) {
-                          if (mode == AuthMode.signIn) _submit();
-                        },
-                        style: GoogleFonts.poppins(color: ora.text),
-                        decoration: _inputDecoration(
-                          hint: '••••••••',
-                          suffix: IconButton(
-                            onPressed: () => setState(() => obscure = !obscure),
-                            icon: Icon(
-                              obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                              color: ora.muted,
-                              size: 20,
+                        const SizedBox(height: 18),
+                        SizedBox(
+                          height: 52,
+                          child: FilledButton(
+                            onPressed: submitting ? null : _submitOtp,
+                            style: FilledButton.styleFrom(
+                              backgroundColor: ora.lime,
+                              foregroundColor: ora.onLime,
+                              disabledBackgroundColor: ora.line,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  submitting ? '…' : t.otpSubmit,
+                                  style: GoogleFonts.poppins(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                                if (!submitting) ...[
+                                  const SizedBox(width: 8),
+                                  const Icon(Icons.arrow_forward_rounded, size: 18),
+                                ],
+                              ],
                             ),
                           ),
                         ),
-                      ),
-                      if (mode == AuthMode.register) ...[
-                        const SizedBox(height: 14),
-                        _FieldLabel(t.confirm),
-                        const SizedBox(height: 6),
-                        TextField(
-                          controller: confirmController,
-                          obscureText: true,
-                          textInputAction: TextInputAction.done,
-                          onSubmitted: (_) => _submit(),
-                          style: GoogleFonts.poppins(color: ora.text),
-                          decoration: _inputDecoration(hint: '••••••••'),
-                        ),
-                      ],
-                      if (mode == AuthMode.signIn) ...[
                         const SizedBox(height: 14),
                         Row(
                           children: [
-                            SizedBox(
-                              height: 22,
-                              width: 22,
-                              child: Checkbox(
-                                value: remember,
-                                onChanged: (value) => setState(() => remember = value ?? true),
-                                activeColor: ora.lime,
-                                checkColor: ora.onLime,
-                                side: BorderSide(color: ora.line),
-                                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: GestureDetector(
-                                onTap: () => setState(() => remember = !remember),
-                                child: Text(
-                                  t.remember,
-                                  style: GoogleFonts.poppins(
-                                    color: ora.text,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w500,
-                                  ),
+                            TextButton(
+                              onPressed: submitting ? null : _cancelOtp,
+                              child: Text(
+                                t.otpBack,
+                                style: GoogleFonts.poppins(
+                                  color: ora.muted,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
                                 ),
                               ),
                             ),
-                            Text(
-                              t.forgot,
-                              style: GoogleFonts.poppins(
-                                color: ora.lime,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
+                            const Spacer(),
+                            TextButton(
+                              onPressed: (submitting || resendIn > 0) ? null : _resendOtp,
+                              child: Text(
+                                resendIn > 0
+                                    ? t.otpResendIn.replaceAll('{sec}', '$resendIn')
+                                    : t.otpResend,
+                                style: GoogleFonts.poppins(
+                                  color: resendIn > 0 ? ora.muted : ora.lime,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
                               ),
                             ),
                           ],
                         ),
-                      ],
-                      const SizedBox(height: 18),
-                      SizedBox(
-                        height: 52,
-                        child: FilledButton(
-                          onPressed: submitting ? null : _submit,
-                          style: FilledButton.styleFrom(
-                            backgroundColor: ora.lime,
-                            foregroundColor: ora.onLime,
-                            disabledBackgroundColor: ora.line,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                submitting
-                                    ? '…'
-                                    : (mode == AuthMode.signIn ? t.submitSignIn : t.submitRegister),
-                                style: GoogleFonts.poppins(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 15,
-                                ),
-                              ),
-                              if (!submitting) ...[
-                                const SizedBox(width: 8),
-                                const Icon(Icons.arrow_forward_rounded, size: 18),
-                              ],
-                            ],
+                      ] else ...[
+                        Text(
+                          mode == AuthMode.signIn ? t.signInTitle : t.registerTitle,
+                          style: GoogleFonts.poppins(
+                            fontSize: 32,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.8,
+                            color: ora.text,
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 22),
-                      Row(
-                        children: [
-                          Expanded(child: Divider(color: ora.line)),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            child: Text(
-                              t.orContinue,
-                              style: GoogleFonts.poppins(
-                                color: ora.muted,
-                                fontSize: 12,
-                              ),
-                            ),
+                        const SizedBox(height: 8),
+                        Text(
+                          mode == AuthMode.signIn ? t.signInSubtitle : t.registerSubtitle,
+                          style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            height: 1.45,
+                            color: ora.muted,
                           ),
-                          Expanded(child: Divider(color: ora.line)),
+                        ),
+                        const SizedBox(height: 24),
+                        if (mode == AuthMode.register) ...[
+                          _FieldLabel(t.fullName),
+                          const SizedBox(height: 6),
+                          TextField(
+                            controller: nameController,
+                            textInputAction: TextInputAction.next,
+                            style: GoogleFonts.poppins(color: ora.text),
+                            decoration: _inputDecoration(),
+                          ),
+                          const SizedBox(height: 14),
                         ],
-                      ),
-                      const SizedBox(height: 14),
-                      SizedBox(
-                        height: 48,
-                        child: OutlinedButton(
-                          onPressed: submitting ? null : _googleSignIn,
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: ora.text,
-                            side: BorderSide(color: ora.line),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              if (submitting)
-                                SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: ora.lime,
-                                  ),
-                                )
-                              else ...[
-                                const _GoogleMark(),
-                                const SizedBox(width: 10),
-                                Text(
-                                  'Google',
-                                  style: GoogleFonts.poppins(
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 14,
-                                    color: ora.text,
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
+                        _FieldLabel(t.identifier),
+                        const SizedBox(height: 6),
+                        TextField(
+                          controller: identifierController,
+                          keyboardType: TextInputType.emailAddress,
+                          textInputAction: TextInputAction.next,
+                          style: GoogleFonts.poppins(color: ora.text),
+                          decoration: _inputDecoration(hint: t.identifierPh),
                         ),
-                      ),
-                      const SizedBox(height: 22),
-                      Center(
-                        child: Wrap(
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            Text(
-                              mode == AuthMode.signIn ? t.noAccount : t.hasAccount,
-                              style: GoogleFonts.poppins(
+                        const SizedBox(height: 14),
+                        _FieldLabel(t.password),
+                        const SizedBox(height: 6),
+                        TextField(
+                          controller: passwordController,
+                          obscureText: obscure,
+                          textInputAction: mode == AuthMode.register
+                              ? TextInputAction.next
+                              : TextInputAction.done,
+                          onSubmitted: (_) {
+                            if (mode == AuthMode.signIn) _submit();
+                          },
+                          style: GoogleFonts.poppins(color: ora.text),
+                          decoration: _inputDecoration(
+                            hint: '••••••••',
+                            suffix: IconButton(
+                              onPressed: () => setState(() => obscure = !obscure),
+                              icon: Icon(
+                                obscure
+                                    ? Icons.visibility_outlined
+                                    : Icons.visibility_off_outlined,
                                 color: ora.muted,
-                                fontSize: 14,
+                                size: 20,
                               ),
                             ),
-                            const SizedBox(width: 6),
-                            GestureDetector(
-                              onTap: submitting ? null : _switchMode,
-                              child: Text(
-                                mode == AuthMode.signIn ? t.signUp : t.signIn,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          t.passwordHint,
+                          style: GoogleFonts.poppins(
+                            color: ora.muted,
+                            fontSize: 12,
+                            height: 1.35,
+                          ),
+                        ),
+                        if (mode == AuthMode.register) ...[
+                          const SizedBox(height: 14),
+                          _FieldLabel(t.confirm),
+                          const SizedBox(height: 6),
+                          TextField(
+                            controller: confirmController,
+                            obscureText: obscureConfirm,
+                            textInputAction: TextInputAction.done,
+                            onSubmitted: (_) => _submit(),
+                            style: GoogleFonts.poppins(color: ora.text),
+                            decoration: _inputDecoration(
+                              hint: '••••••••',
+                              suffix: IconButton(
+                                onPressed: () =>
+                                    setState(() => obscureConfirm = !obscureConfirm),
+                                icon: Icon(
+                                  obscureConfirm
+                                      ? Icons.visibility_outlined
+                                      : Icons.visibility_off_outlined,
+                                  color: ora.muted,
+                                  size: 20,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                        if (mode == AuthMode.signIn) ...[
+                          const SizedBox(height: 14),
+                          Row(
+                            children: [
+                              SizedBox(
+                                height: 22,
+                                width: 22,
+                                child: Checkbox(
+                                  value: remember,
+                                  onChanged: (value) =>
+                                      setState(() => remember = value ?? true),
+                                  activeColor: ora.lime,
+                                  checkColor: ora.onLime,
+                                  side: BorderSide(color: ora.line),
+                                  materialTapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: GestureDetector(
+                                  onTap: () => setState(() => remember = !remember),
+                                  child: Text(
+                                    t.remember,
+                                    style: GoogleFonts.poppins(
+                                      color: ora.text,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                t.forgot,
                                 style: GoogleFonts.poppins(
                                   color: ora.lime,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                        const SizedBox(height: 18),
+                        SizedBox(
+                          height: 52,
+                          child: FilledButton(
+                            onPressed: submitting ? null : _submit,
+                            style: FilledButton.styleFrom(
+                              backgroundColor: ora.lime,
+                              foregroundColor: ora.onLime,
+                              disabledBackgroundColor: ora.line,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  submitting
+                                      ? '…'
+                                      : (mode == AuthMode.signIn
+                                          ? t.submitSignIn
+                                          : t.submitRegister),
+                                  style: GoogleFonts.poppins(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                                if (!submitting) ...[
+                                  const SizedBox(width: 8),
+                                  const Icon(Icons.arrow_forward_rounded, size: 18),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 22),
+                        Row(
+                          children: [
+                            Expanded(child: Divider(color: ora.line)),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              child: Text(
+                                t.orContinue,
+                                style: GoogleFonts.poppins(
+                                  color: ora.muted,
+                                  fontSize: 12,
                                 ),
                               ),
                             ),
+                            Expanded(child: Divider(color: ora.line)),
                           ],
                         ),
-                      ),
+                        const SizedBox(height: 14),
+                        SizedBox(
+                          height: 48,
+                          child: OutlinedButton(
+                            onPressed: submitting ? null : _googleSignIn,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: ora.text,
+                              side: BorderSide(color: ora.line),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                if (submitting)
+                                  SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: ora.lime,
+                                    ),
+                                  )
+                                else ...[
+                                  const _GoogleMark(),
+                                  const SizedBox(width: 10),
+                                  Text(
+                                    'Google',
+                                    style: GoogleFonts.poppins(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14,
+                                      color: ora.text,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 22),
+                        Center(
+                          child: Wrap(
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              Text(
+                                mode == AuthMode.signIn ? t.noAccount : t.hasAccount,
+                                style: GoogleFonts.poppins(
+                                  color: ora.muted,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              GestureDetector(
+                                onTap: submitting ? null : _switchMode,
+                                child: Text(
+                                  mode == AuthMode.signIn ? t.signUp : t.signIn,
+                                  style: GoogleFonts.poppins(
+                                    color: ora.lime,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -656,47 +1002,21 @@ class _LangChip extends StatelessWidget {
 class _GoogleMark extends StatelessWidget {
   const _GoogleMark();
 
+  static const _svg = '''
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+  <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+  <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+  <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+</svg>
+''';
+
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
+    return SvgPicture.string(
+      _svg,
       width: 18,
       height: 18,
-      child: CustomPaint(painter: _GooglePainter()),
     );
   }
-}
-
-class _GooglePainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    // Simple multicolor G mark approximation.
-    final cx = size.width / 2;
-    final cy = size.height / 2;
-    final r = size.width * 0.42;
-    final stroke = size.width * 0.18;
-    final rect = Rect.fromCircle(center: Offset(cx, cy), radius: r);
-
-    void arc(Color color, double start, double sweep) {
-      final paint = Paint()
-        ..color = color
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = stroke
-        ..strokeCap = StrokeCap.butt;
-      canvas.drawArc(rect, start, sweep, false, paint);
-    }
-
-    arc(const Color(0xFF4285F4), -0.6, 1.6);
-    arc(const Color(0xFF34A853), 1.0, 1.4);
-    arc(const Color(0xFFFBBC05), 2.4, 1.1);
-    arc(const Color(0xFFEA4335), 3.5, 1.3);
-
-    final bar = Paint()..color = const Color(0xFF4285F4);
-    canvas.drawRect(
-      Rect.fromLTWH(cx - stroke * 0.2, cy - stroke * 0.45, r + stroke * 0.3, stroke * 0.9),
-      bar,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

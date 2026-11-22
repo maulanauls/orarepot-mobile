@@ -30,6 +30,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
@@ -45,6 +47,7 @@ dependencies:
   url_launcher: ^6.3.2
   alice: ^1.1.1
   alice_http: ^1.1.1
+  lottie: ^3.3.3
 
 # Alice → permission_handler_android 14.x ships a broken build.gradle.kts
 # (kotlin {} without applying the Kotlin plugin). Pin a Groovy-based build.
@@ -98,6 +101,8 @@ flutter:
     - assets/brand/logo-orarepot-icon.png
     - assets/icons/
     - assets/illustrations/
+    - assets/illustrations/categories/
+    - assets/lottie/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

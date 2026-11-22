@@ -7,7 +7,9 @@ import '../../../constants/money.dart';
 import '../../../theme/ora_palette.dart';
 import '../../../data/api_client.dart';
 import '../../../data/app_scope.dart';
+import '../../../data/auth_store.dart';
 import '../../../data/models/biller_models.dart';
+import '../../../data/order_helpers.dart';
 import '../../order/order_page.dart';
 
 class HistoryPage extends StatefulWidget {
@@ -24,11 +26,33 @@ class _HistoryPageState extends State<HistoryPage> {
   bool loading = false;
   String? error;
   bool signedIn = false;
+  AuthStore? _authStore;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final store = AppScope.of(context).authStore;
+    if (identical(_authStore, store)) return;
+    _authStore?.removeListener(_onAuthChanged);
+    _authStore = store;
+    _authStore!.addListener(_onAuthChanged);
+  }
+
+  @override
+  void dispose() {
+    _authStore?.removeListener(_onAuthChanged);
+    super.dispose();
+  }
+
+  void _onAuthChanged() {
+    if (!mounted) return;
+    _load();
   }
 
   Future<void> _load() async {
@@ -101,16 +125,17 @@ class _HistoryPageState extends State<HistoryPage> {
     return orders.where((order) {
       final created = _parseCreated(order.createdAt);
       if (created == null) return true;
-      return !created.isBefore(start) && !created.isAfter(end);
+      final wib = toWib(created);
+      return !wib.isBefore(start) && !wib.isAfter(end);
     }).toList();
   }
 
   Map<String, List<BillerOrder>> get grouped {
-    final formatter = DateFormat('MMMM, d yyyy');
+    final formatter = DateFormat('d MMMM yyyy', 'id');
     final map = <String, List<BillerOrder>>{};
     for (final order in filtered) {
       final created = _parseCreated(order.createdAt) ?? DateTime.now();
-      final key = formatter.format(created);
+      final key = formatter.format(toWib(created));
       map.putIfAbsent(key, () => []).add(order);
     }
     return map;
@@ -127,7 +152,7 @@ class _HistoryPageState extends State<HistoryPage> {
   @override
   Widget build(BuildContext context) {
     final ora = context.ora;
-    final dateFmt = DateFormat('MMMM, d yyyy');
+    final dateFmt = DateFormat('d MMMM yyyy', 'id');
     final groups = grouped;
     final holdList = orders.isEmpty && (loading || error != null);
 
@@ -144,7 +169,7 @@ class _HistoryPageState extends State<HistoryPage> {
                 children: [
                   Expanded(
                     child: Text(
-                      'History',
+                      'Riwayat',
                       style: TextStyle(
                         color: ora.text,
                         fontSize: 28,
@@ -166,14 +191,14 @@ class _HistoryPageState extends State<HistoryPage> {
                 children: [
                   Expanded(
                     child: _DateField(
-                      label: 'From ${dateFmt.format(from)}',
+                      label: 'Dari ${dateFmt.format(from)}',
                       onTap: () => _pickDate(isFrom: true),
                     ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: _DateField(
-                      label: 'To ${dateFmt.format(to)}',
+                      label: 'Sampai ${dateFmt.format(to)}',
                       onTap: () => _pickDate(isFrom: false),
                     ),
                   ),
@@ -394,8 +419,8 @@ class _HistoryRow extends StatelessWidget {
     final created = DateTime.tryParse(order.createdAt);
     final time = created == null
         ? order.createdAt
-        : DateFormat('HH:mm · MMM d yyyy').format(created);
-    final ok = order.stage == OrderStage.success;
+        : DateFormat('HH:mm · d MMM yyyy', 'id').format(toWib(created));
+    final visual = _stageVisual(order.stage, ora);
     final title = order.sn?.isNotEmpty == true
         ? order.sn!
         : (order.billingCode.isNotEmpty ? order.billingCode : order.productName ?? 'Pesanan');
@@ -418,14 +443,10 @@ class _HistoryRow extends StatelessWidget {
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  color: (ok ? ora.success : ora.warning).withValues(alpha: 0.12),
+                  color: visual.color.withValues(alpha: 0.12),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(
-                  ok ? Icons.check_rounded : Icons.schedule_rounded,
-                  color: ok ? ora.success : ora.warning,
-                  size: 20,
-                ),
+                child: Icon(visual.icon, color: visual.color, size: 20),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -462,4 +483,15 @@ class _HistoryRow extends StatelessWidget {
       ),
     );
   }
+}
+
+({Color color, IconData icon}) _stageVisual(OrderStage stage, OraPalette ora) {
+  return switch (stage) {
+    OrderStage.success => (color: ora.success, icon: Icons.check_rounded),
+    OrderStage.processing ||
+    OrderStage.waiting ||
+    OrderStage.unpaid => (color: ora.warning, icon: Icons.schedule_rounded),
+    OrderStage.expired => (color: ora.danger, icon: Icons.timer_off_rounded),
+    OrderStage.failed => (color: ora.danger, icon: Icons.cancel_rounded),
+  };
 }

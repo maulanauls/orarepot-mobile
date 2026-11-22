@@ -54,16 +54,19 @@ class _PulsePageState extends State<PulsePage> {
       error = null;
     });
     try {
-      final rows = await AppScope.read(context).catalog.fetchCatalog();
-      final preferred = rows.where((c) => c.kind == widget.initialKind).toList();
+      final rows = (await AppScope.read(context).catalog.fetchCatalog())
+          .where((c) => c.brands.isNotEmpty)
+          .toList();
+      final preferredKind = widget.initialKind.trim().toLowerCase();
+      final preferred = preferredKind.isEmpty
+          ? const <CatalogCategory>[]
+          : rows.where((c) => c.kind == preferredKind).toList();
+      // Prefer requested kind from API; otherwise first row that has providers.
       final picked = preferred.isNotEmpty
           ? preferred.first
-          : rows.firstWhere(
-              (c) => c.brands.isNotEmpty,
-              orElse: () => rows.isNotEmpty
-                  ? rows.first
-                  : const CatalogCategory(id: '', key: '', label: '', kind: ''),
-            );
+          : rows.isNotEmpty
+              ? rows.first
+              : const CatalogCategory(id: '', key: '', label: '', kind: '');
       if (!mounted) return;
       setState(() {
         categories = rows;

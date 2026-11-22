@@ -1,15 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'app_config.dart';
 import 'src/common_widgets/draggable_debug_button.dart';
 import 'src/data/app_scope.dart';
 import 'src/features/home/home_shell.dart';
+import 'src/features/splash/splash_page.dart';
 import 'src/theme/app_theme.dart';
 
 class OraRepotPpobApp extends StatefulWidget {
-  const OraRepotPpobApp({super.key, required this.config});
+  const OraRepotPpobApp({
+    super.key,
+    required this.config,
+    this.showSplash = true,
+  });
 
   final AppConfig config;
+
+  /// When false, skip the animated splash (used by widget tests).
+  final bool showSplash;
 
   @override
   State<OraRepotPpobApp> createState() => _OraRepotPpobAppState();
@@ -21,6 +30,7 @@ class _OraRepotPpobAppState extends State<OraRepotPpobApp> {
     services.authStore.load(),
     services.theme.load(),
   ]);
+  late bool _ready = !widget.showSplash;
 
   @override
   void initState() {
@@ -39,6 +49,11 @@ class _OraRepotPpobAppState extends State<OraRepotPpobApp> {
     if (mounted) setState(() {});
   }
 
+  void _onSplashReady() {
+    if (!mounted || _ready) return;
+    setState(() => _ready = true);
+  }
+
   @override
   Widget build(BuildContext context) {
     return AppScope(
@@ -47,6 +62,13 @@ class _OraRepotPpobAppState extends State<OraRepotPpobApp> {
         navigatorKey: services.alice?.navigatorKey,
         debugShowCheckedModeBanner: false,
         title: '${widget.config.appName} ${widget.config.environmentCode}',
+        locale: const Locale('id'),
+        supportedLocales: const [Locale('id'), Locale('en')],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
         theme: AppTheme.light(),
         darkTheme: AppTheme.dark(),
         themeMode: services.theme.mode,
@@ -59,17 +81,13 @@ class _OraRepotPpobAppState extends State<OraRepotPpobApp> {
             ],
           );
         },
-        home: FutureBuilder<void>(
-          future: boot,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState != ConnectionState.done) {
-              return const Scaffold(
-                body: Center(child: CircularProgressIndicator()),
-              );
-            }
-            return HomeShell(config: widget.config);
-          },
-        ),
+        home: _ready
+            ? HomeShell(config: widget.config)
+            : SplashPage(
+                config: widget.config,
+                boot: boot,
+                onReady: _onSplashReady,
+              ),
       ),
     );
   }

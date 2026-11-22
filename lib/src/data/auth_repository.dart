@@ -23,6 +23,9 @@ class AuthRepository {
         'password': password,
       },
     );
+    if (body['otp_required'] == true) {
+      throw OtpRequiredException(OtpChallenge.fromJson(body));
+    }
     final auth = StoreAuth.fromJson(body);
     await _store.persist(auth, remember: remember);
     return auth;
@@ -58,6 +61,9 @@ class AuthRepository {
         'password': password,
       },
     );
+    if (body['otp_required'] == true) {
+      throw OtpRequiredException(OtpChallenge.fromJson(body));
+    }
     final auth = StoreAuth.fromJson(body);
     await _store.persist(auth, remember: true);
     return auth;
@@ -78,10 +84,30 @@ class AuthRepository {
       },
     );
     if (body['otp_required'] == true) {
-      throw ApiException(
-        'Akun ini butuh verifikasi OTP. Gunakan web untuk menyelesaikan OTP sementara.',
-      );
+      throw OtpRequiredException(OtpChallenge.fromJson(body));
     }
+    final auth = StoreAuth.fromJson(body);
+    await _store.persist(auth, remember: remember);
+    return auth;
+  }
+
+  /// Completes an OTP challenge from [enter] via `POST /biller/auth/enter/verify`.
+  Future<StoreAuth> verifyEnterOtp({
+    required String challenge,
+    required String code,
+    bool remember = true,
+  }) async {
+    final digits = code.replaceAll(RegExp(r'\D'), '');
+    if (challenge.trim().isEmpty || digits.length != 6) {
+      throw ApiException('Kode harus tepat 6 angka.');
+    }
+    final body = await _api.postJson(
+      '/biller/auth/enter/verify',
+      body: {
+        'challenge': challenge.trim(),
+        'code': digits,
+      },
+    );
     final auth = StoreAuth.fromJson(body);
     await _store.persist(auth, remember: remember);
     return auth;

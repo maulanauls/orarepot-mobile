@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../data/app_scope.dart';
+import '../../../data/auth_store.dart';
+import '../../../data/models/biller_models.dart';
 import '../../../theme/ora_palette.dart';
 import '../../auth/sign_in_sheet.dart';
 
@@ -16,9 +18,7 @@ class _ProfilPageState extends State<ProfilPage> {
   Future<void> _logout() async {
     await AppScope.read(context).auth.logout();
     if (!mounted) return;
-    setState(() {});
     await showSignInSheet(context);
-    if (mounted) setState(() {});
   }
 
   void _soon(String label) {
@@ -29,20 +29,47 @@ class _ProfilPageState extends State<ProfilPage> {
 
   @override
   Widget build(BuildContext context) {
-    final ora = context.ora;
     final store = AppScope.of(context).authStore;
-    final user = store.user;
+    return ListenableBuilder(
+      listenable: store,
+      builder: (context, _) => _ProfileBody(
+        store: store,
+        onLogout: _logout,
+        onSoon: _soon,
+      ),
+    );
+  }
+}
+
+class _ProfileBody extends StatelessWidget {
+  const _ProfileBody({
+    required this.store,
+    required this.onLogout,
+    required this.onSoon,
+  });
+
+  final AuthStore store;
+  final Future<void> Function() onLogout;
+  final void Function(String label) onSoon;
+
+  @override
+  Widget build(BuildContext context) {
+    final ora = context.ora;
+    final BillerUser? user = store.user;
     final signedIn = store.isSignedIn;
 
+    // Backend `/biller/auth/enter` → users_fullname + users_email.
     final name = signedIn
-        ? (user?.usersName?.trim().isNotEmpty == true ? user!.usersName!.trim() : 'Pelanggan')
+        ? (user?.usersName?.trim().isNotEmpty == true
+            ? user!.usersName!.trim()
+            : 'Pelanggan')
         : 'Tamu';
     final subtitle = signedIn
         ? (user?.usersEmail?.trim().isNotEmpty == true
             ? user!.usersEmail!.trim()
             : (user?.userPhonenumber?.trim().isNotEmpty == true
                 ? user!.userPhonenumber!.trim()
-                : user?.usersIdf ?? ''))
+                : 'Akun terhubung'))
         : 'Masuk untuk mengelola akun';
     final initial = name.isNotEmpty ? name[0].toUpperCase() : 'O';
 
@@ -52,40 +79,17 @@ class _ProfilPageState extends State<ProfilPage> {
         children: [
           const SizedBox(height: 12),
           Center(
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                CircleAvatar(
-                  radius: 44,
-                  backgroundColor: ora.field,
-                  child: Text(
-                    initial,
-                    style: GoogleFonts.poppins(
-                      color: ora.lime,
-                      fontSize: 32,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
+            child: CircleAvatar(
+              radius: 44,
+              backgroundColor: ora.field,
+              child: Text(
+                initial,
+                style: GoogleFonts.poppins(
+                  color: ora.lime,
+                  fontSize: 32,
+                  fontWeight: FontWeight.w700,
                 ),
-                if (signedIn)
-                  Positioned(
-                    right: -2,
-                    bottom: -2,
-                    child: Material(
-                      color: ora.lime,
-                      shape: const CircleBorder(),
-                      child: InkWell(
-                        customBorder: const CircleBorder(),
-                        onTap: () => _soon('Edit profil'),
-                        child: SizedBox(
-                          width: 30,
-                          height: 30,
-                          child: Icon(Icons.edit_rounded, size: 15, color: ora.onLime),
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
+              ),
             ),
           ),
           const SizedBox(height: 16),
@@ -114,35 +118,36 @@ class _ProfilPageState extends State<ProfilPage> {
             children: [
               _MenuTile(
                 icon: Icons.support_agent_rounded,
-                title: 'CONTACT SUPPORT',
-                onTap: () => _soon('Contact Support'),
+                title: 'LAYANAN BANTUAN',
+                onTap: () => onSoon('Layanan bantuan'),
               ),
               _MenuTile(
                 icon: Icons.help_outline_rounded,
-                title: "FAQ'S",
-                onTap: () => _soon('FAQ'),
+                title: 'FAQ',
+                onTap: () => onSoon('FAQ'),
               ),
             ],
           ),
           const SizedBox(height: 12),
           _MenuCard(
             children: [
-              _MenuTile(
-                icon: Icons.settings_outlined,
-                title: 'ACCOUNT SETTINGS',
-                onTap: () => _soon('Account Settings'),
-              ),
+              if (signedIn)
+                _MenuTile(
+                  icon: Icons.settings_outlined,
+                  title: 'PENGATURAN AKUN',
+                  onTap: () => onSoon('Pengaturan akun'),
+                ),
               _MenuTile(
                 icon: Icons.star_outline_rounded,
-                title: 'RATE US',
-                onTap: () => _soon('Rate Us'),
+                title: 'NILAI KAMI',
+                onTap: () => onSoon('Nilai kami'),
               ),
               if (signedIn)
                 _MenuTile(
                   icon: Icons.logout_rounded,
                   title: 'KELUAR',
                   danger: true,
-                  onTap: _logout,
+                  onTap: onLogout,
                 ),
             ],
           ),

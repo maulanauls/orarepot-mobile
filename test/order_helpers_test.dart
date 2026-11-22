@@ -15,6 +15,17 @@ void main() {
     expect(countdownText(expires, now), '05:07');
   });
 
+  test('formatOrderTimeWib uses fixed GMT+7', () {
+    expect(formatOrderTimeWib('2026-01-01T00:00:00Z'), '01/01/2026 07:00 WIB');
+    expect(formatOrderTimeWib('2026-11-17T06:34:00Z'), '17/11/2026 13:34 WIB');
+  });
+
+  test('toWib shifts UTC by +7 hours', () {
+    final wib = toWib(DateTime.utc(2026, 11, 17, 6, 34));
+    expect(wib.hour, 13);
+    expect(wib.day, 17);
+  });
+
   test('qrPayload prefers qr_string', () {
     const order = BillerOrder(
       billingCode: 'ABC',

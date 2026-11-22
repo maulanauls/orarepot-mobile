@@ -14,8 +14,8 @@ class OraBanner extends StatelessWidget {
     this.message,
     this.onRetry,
     this.onDismiss,
-    this.retryLabel = 'Retry',
-    this.dismissLabel = 'Dismiss',
+    this.retryLabel = 'Coba lagi',
+    this.dismissLabel = 'Tutup',
   });
 
   final OraBannerType type;
@@ -200,8 +200,8 @@ void showOraBanner(
   required String title,
   String? message,
   VoidCallback? onRetry,
-  String retryLabel = 'Retry',
-  String dismissLabel = 'Dismiss',
+  String retryLabel = 'Coba lagi',
+  String dismissLabel = 'Tutup',
   Duration? autoDismiss,
 }) {
   hideOraBanner();
@@ -273,11 +273,11 @@ void hideOraBanner() {
 
 void showOraError(
   BuildContext context, {
-  String title = 'Something went wrong',
+  String title = 'Terjadi kesalahan',
   required String message,
   VoidCallback? onRetry,
-  String retryLabel = 'Retry',
-  String dismissLabel = 'Dismiss',
+  String retryLabel = 'Coba lagi',
+  String dismissLabel = 'Tutup',
 }) {
   showOraBanner(
     context,

@@ -18,10 +18,16 @@ class CustomerPage extends StatelessWidget {
             child: OraLogo(height: 36),
           ),
           const SizedBox(height: 36),
-          Text('Customer', style: Theme.of(context).textTheme.headlineMedium),
+          Text(
+            'LAYANAN BANTUAN',
+            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  fontSize: 22,
+                  letterSpacing: 0.4,
+                ),
+          ),
           const SizedBox(height: 8),
           Text(
-            'Bantuan transaksi digital, status order, dan pengaduan.',
+            'Customer service untuk transaksi digital, status order, dan pengaduan.',
             style: TextStyle(color: ora.muted, height: 1.5),
           ),
           const SizedBox(height: 24),

@@ -88,21 +88,12 @@ class _BerandaPageState extends State<BerandaPage> {
 
   void _openChip(HomeCategoryChip chip) {
     final kind = chip.kind.trim().toLowerCase();
-    if (kind == 'semua') {
+    if (kind.isEmpty || kind == 'semua') {
       _openOrder();
       return;
     }
-    if (kind == 'pulsa' || kind == 'data' || kind == 'pln' || kind == 'game') {
-      _openOrder(kind: kind);
-      return;
-    }
-    if (kind == 'emoney' || kind == 'digital' || kind == 'e-money') {
-      _openOrder(kind: 'pulsa');
-      return;
-    }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${chip.label} segera hadir.')),
-    );
+    // Any category from `/biller/catalog` opens Instant Order on that kind.
+    _openOrder(kind: kind);
   }
 
   @override

@@ -20,14 +20,16 @@ void main() {
       googleClientId:
           '569539983389-ue1egs1g4rivgo1csjn9ci734h1qopdc.apps.googleusercontent.com',
     );
-    await tester.pumpWidget(const OraRepotPpobApp(config: config));
+    await tester.pumpWidget(const OraRepotPpobApp(config: config, showSplash: false));
     await tester.pump();
+    // Allow boot Future (auth/theme load) to complete.
     await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump();
 
     expect(find.text('SEMUA SISTEM NORMAL'), findsOneWidget);
     expect(find.text('TOKO PULSA ORA REPOT'), findsOneWidget);
     expect(find.text('Beli sekarang  ↗'), findsOneWidget);
-    expect(find.text('Home'), findsOneWidget);
+    expect(find.text('Beranda'), findsOneWidget);
 
     final scroll = find.byType(CustomScrollView);
     await tester.drag(scroll, const Offset(0, -800));

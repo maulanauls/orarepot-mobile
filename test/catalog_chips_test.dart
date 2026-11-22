@@ -4,12 +4,12 @@ import 'package:orarepot/src/data/models/biller_models.dart';
 import 'package:orarepot/src/features/home/beranda/category_section.dart';
 
 void main() {
-  test('buildHomeChips mirrors web inventory chips from catalog API shape', () {
+  test('buildHomeChips uses catalog API labels and kinds as-is', () {
     final categories = [
       const CatalogCategory(
         id: '1',
         key: 'pulsa',
-        label: 'Pulsa',
+        label: 'PULSA',
         kind: 'pulsa',
         brands: [
           CatalogBrand(name: 'Telkomsel'),
@@ -20,65 +20,53 @@ void main() {
       const CatalogCategory(
         id: '2',
         key: 'data',
-        label: 'Data',
+        label: 'DATA',
         kind: 'data',
-        brands: [CatalogBrand(name: 'Telkomsel'), CatalogBrand(name: 'XL')],
+        brands: [],
       ),
       const CatalogCategory(
         id: '3',
         key: 'pln',
-        label: 'PLN',
+        label: 'PLN TOKEN',
         kind: 'pln',
-        brands: [CatalogBrand(name: 'PLN')],
+        brands: [],
       ),
       const CatalogCategory(
         id: '4',
         key: 'game',
-        label: 'Game',
+        label: 'GAME KEY',
         kind: 'game',
         brands: [CatalogBrand(name: 'Mobile Legends'), CatalogBrand(name: 'Free Fire')],
       ),
       const CatalogCategory(
         id: '5',
         key: 'emoney',
-        label: 'E-Money',
+        label: 'E-MONEY',
         kind: 'emoney',
         brands: [CatalogBrand(name: 'GoPay')],
-      ),
-      const CatalogCategory(
-        id: '6',
-        key: 'other',
-        label: 'Empty Other',
-        kind: 'other',
-        brands: [],
       ),
     ];
 
     final chips = buildHomeChips(categories);
 
     expect(chips.first.label, 'Semua produk');
-    expect(chips.first.hint, '9+ ITEMS');
+    expect(chips.first.hint, '6+ ITEMS');
     expect(chips.first.icon, CategoryIconName.semua);
 
+    // Empty DATA / PLN TOKEN (brands: []) are omitted from Kategori pilihan.
     expect(chips.map((c) => c.kind).toList(), [
       'semua',
       'pulsa',
-      'data',
-      'pln',
       'game',
       'emoney',
     ]);
 
-    expect(chips[1].label, 'Pulsa');
-    expect(chips[1].hint, 'SEMUA OPERATOR');
-    expect(chips[2].label, 'Data');
+    expect(chips[1].label, 'PULSA');
+    expect(chips[1].hint, '3 PROVIDER');
+    expect(chips[2].label, 'GAME KEY');
     expect(chips[2].hint, '2 PROVIDER');
-    expect(chips[3].label, 'PLN & Tagihan');
-    expect(chips[3].hint, 'LISTRIK RESMI');
-    expect(chips[4].label, 'Game');
-    expect(chips[4].hint, 'TOPUP & TOKEN');
-    expect(chips[5].label, 'Digital');
-    expect(chips[5].hint, '1 PROVIDER');
+    expect(chips[3].label, 'E-MONEY');
+    expect(chips[3].hint, '1 PROVIDER');
   });
 
   test('CatalogCategory.fromJson reads /biller/catalog payload rows', () {

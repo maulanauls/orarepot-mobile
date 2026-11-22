@@ -1,11 +1,12 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'models/biller_models.dart';
 
 /// Persistent customer session — same role as orappob `orappob-customer` storage.
-class AuthStore {
+class AuthStore extends ChangeNotifier {
   AuthStore();
 
   static const _key = 'orarepot-customer';
@@ -25,18 +26,20 @@ class AuthStore {
     _loaded = true;
     if (raw == null || raw.isEmpty) {
       _auth = null;
+      notifyListeners();
       return;
     }
     try {
       final parsed = StoreAuth.fromJson(jsonDecode(raw) as Map<String, dynamic>);
       if (parsed.token.isEmpty || parsed.user.usersIdf.isEmpty) {
         _auth = null;
-        return;
+      } else {
+        _auth = parsed;
       }
-      _auth = parsed;
     } catch (_) {
       _auth = null;
     }
+    notifyListeners();
   }
 
   /// When [remember] is false, keep the session in memory only (like sessionStorage).
@@ -49,11 +52,13 @@ class AuthStore {
     } else {
       await prefs.remove(_key);
     }
+    notifyListeners();
   }
 
   Future<void> clear() async {
     _auth = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_key);
+    notifyListeners();
   }
 }

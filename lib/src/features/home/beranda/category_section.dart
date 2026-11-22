@@ -22,32 +22,12 @@ class HomeCategoryChip {
   final CategoryIconName icon;
 }
 
-({String title, String hint}) categoryChipCopy(String kind, String label, int brandCount) {
-  final key = kind.trim().toLowerCase();
-  final providerHint = brandCount > 0 ? '$brandCount PROVIDER' : 'SIAP KIRIM';
-  if (key == 'pulsa') {
-    return (title: 'Pulsa', hint: brandCount > 0 ? 'SEMUA OPERATOR' : providerHint);
-  }
-  if (key == 'data') {
-    return (title: 'Data', hint: brandCount > 0 ? providerHint : 'DIGITAL GOODS');
-  }
-  if (key == 'pln') {
-    return (title: 'PLN & Tagihan', hint: 'LISTRIK RESMI');
-  }
-  if (key == 'game') {
-    return (title: 'Game', hint: brandCount > 0 ? 'TOPUP & TOKEN' : providerHint);
-  }
-  if (key == 'emoney' || key == 'digital' || key == 'e-money') {
-    return (title: 'Digital', hint: brandCount > 0 ? providerHint : 'DIGITAL GOODS');
-  }
-  final title = label
-      .split(RegExp(r'\s+'))
-      .where((p) => p.isNotEmpty)
-      .map((part) => part[0].toUpperCase() + part.substring(1).toLowerCase())
-      .join(' ');
-  return (title: title.isEmpty ? label : title, hint: providerHint);
+String categoryChipHint(int brandCount) {
+  if (brandCount <= 0) return 'SIAP KIRIM';
+  return '$brandCount PROVIDER';
 }
 
+/// Home chips from `/biller/catalog` rows — labels/kinds come from the API.
 List<HomeCategoryChip> buildHomeChips(List<CatalogCategory> categories) {
   final totalBrands = categories.fold<int>(0, (sum, item) => sum + item.brands.length);
   final chips = <HomeCategoryChip>[
@@ -60,16 +40,18 @@ List<HomeCategoryChip> buildHomeChips(List<CatalogCategory> categories) {
     ),
   ];
   for (final category in categories) {
-    if (category.brands.isEmpty && !['pulsa', 'data', 'pln', 'game'].contains(category.kind)) {
-      continue;
-    }
-    final copy = categoryChipCopy(category.kind, category.label, category.brands.length);
+    // Skip empty catalog rows — no providers means no card in Kategori pilihan.
+    if (category.brands.isEmpty) continue;
+    final label = category.label.trim().isNotEmpty
+        ? category.label.trim()
+        : category.kind.trim();
+    if (label.isEmpty) continue;
     chips.add(
       HomeCategoryChip(
         keyName: category.id.isNotEmpty ? category.id : category.kind,
         kind: category.kind,
-        hint: copy.hint,
-        label: copy.title,
+        hint: categoryChipHint(category.brands.length),
+        label: label,
         icon: iconForKind(category.kind),
       ),
     );
@@ -147,7 +129,7 @@ class CategorySection extends StatelessWidget {
             crossAxisCount: 2,
             mainAxisSpacing: 10,
             crossAxisSpacing: 10,
-            childAspectRatio: 1.15,
+            childAspectRatio: 0.84,
             children: const [
               _CategorySkeletonCard(),
               _CategorySkeletonCard(),
@@ -164,9 +146,9 @@ class CategorySection extends StatelessWidget {
             itemCount: chips.length,
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
-              mainAxisSpacing: 10,
-              crossAxisSpacing: 10,
-              childAspectRatio: 1.12,
+              mainAxisSpacing: 12,
+              crossAxisSpacing: 12,
+              childAspectRatio: 0.84,
             ),
             itemBuilder: (context, index) {
               final chip = chips[index];
@@ -185,7 +167,7 @@ class _CategorySkeletonCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final ora = context.ora;
     return Container(
-      padding: const EdgeInsets.fromLTRB(15, 15, 12, 14),
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
       decoration: BoxDecoration(
         color: ora.panel,
         border: Border.all(color: ora.line),
@@ -193,11 +175,11 @@ class _CategorySkeletonCard extends StatelessWidget {
       child: const Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SkeletonBox(width: 29, height: 29, radius: 2),
-          Spacer(),
-          SkeletonBox(width: 78, height: 8),
+          Expanded(child: SkeletonBox(radius: 12)),
+          SizedBox(height: 10),
+          SkeletonBox(width: 64, height: 8),
           SizedBox(height: 8),
-          SkeletonBox(width: 104, height: 12),
+          SkeletonBox(width: 96, height: 12),
         ],
       ),
     );
@@ -218,49 +200,63 @@ class _CategoryChipCard extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Container(
-          constraints: const BoxConstraints(minHeight: 116),
-          padding: const EdgeInsets.fromLTRB(15, 15, 12, 14),
+          padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
           decoration: BoxDecoration(
             border: Border.all(color: ora.line),
           ),
-          child: Stack(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Positioned(
-                right: 0,
-                top: 0,
-                child: Text(
-                  '↗',
-                  style: TextStyle(color: ora.lime, fontSize: 13, fontWeight: FontWeight.w600),
+              Expanded(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    CategoryIllustration(name: chip.icon),
+                    Positioned(
+                      right: 6,
+                      top: 6,
+                      child: Container(
+                        width: 24,
+                        height: 24,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: ora.panel.withValues(alpha: 0.88),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          '↗',
+                          style: TextStyle(
+                            color: ora.lime,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  CategoryIcon(name: chip.icon),
-                  const SizedBox(height: 22),
-                  const Spacer(),
-                  Text(
-                    chip.hint,
-                    style: GoogleFonts.poppins(
-                      color: ora.muted2,
-                      fontSize: 8,
-                      letterSpacing: 0.5,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    chip.label,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.poppins(
-                      color: ora.text,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      height: 1.2,
-                    ),
-                  ),
-                ],
+              const SizedBox(height: 10),
+              Text(
+                chip.hint,
+                style: GoogleFonts.poppins(
+                  color: ora.muted2,
+                  fontSize: 8,
+                  letterSpacing: 0.5,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                chip.label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.poppins(
+                  color: ora.text,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  height: 1.2,
+                ),
               ),
             ],
           ),

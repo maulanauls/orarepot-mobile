@@ -222,8 +222,12 @@ class OrderListPage {
 
   factory OrderListPage.fromJson(Map<String, dynamic> json) {
     final orders = (json['orders'] as List? ?? const [])
-        .whereType<Map>()
-        .map((e) => BillerOrder.fromJson(Map<String, dynamic>.from(e)))
+        .map((e) {
+          if (e is Map<String, dynamic>) return BillerOrder.fromJson(e);
+          if (e is Map) return BillerOrder.fromJson(Map<String, dynamic>.from(e));
+          return null;
+        })
+        .whereType<BillerOrder>()
         .toList();
     return OrderListPage(
       orders: orders,

@@ -10,6 +10,7 @@ import '../../../data/app_scope.dart';
 import '../../../data/auth_store.dart';
 import '../../../data/models/biller_models.dart';
 import '../../../data/order_helpers.dart';
+import '../../auth/sign_in_sheet.dart';
 import '../../order/order_page.dart';
 
 class HistoryPage extends StatefulWidget {
@@ -20,12 +21,13 @@ class HistoryPage extends StatefulWidget {
 }
 
 class _HistoryPageState extends State<HistoryPage> {
-  DateTime from = DateTime.now().subtract(const Duration(days: 7));
+  DateTime from = DateTime.now().subtract(const Duration(days: 30));
   DateTime to = DateTime.now();
   List<BillerOrder> orders = const [];
   bool loading = false;
   String? error;
   bool signedIn = false;
+  bool sessionExpired = false;
   AuthStore? _authStore;
 
   @override
@@ -61,6 +63,7 @@ class _HistoryPageState extends State<HistoryPage> {
       signedIn = services.authStore.isSignedIn;
       loading = signedIn;
       error = null;
+      sessionExpired = false;
     });
     if (!signedIn) {
       setState(() => orders = const []);
@@ -77,8 +80,10 @@ class _HistoryPageState extends State<HistoryPage> {
       if (!mounted) return;
       setState(() {
         signedIn = false;
+        sessionExpired = true;
         loading = false;
         orders = const [];
+        error = 'Sesi habis. Masuk lagi untuk lihat riwayat.';
       });
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -119,16 +124,19 @@ class _HistoryPageState extends State<HistoryPage> {
     return DateTime.tryParse(raw);
   }
 
+  /// Compare calendar dates in WIB so device timezone cannot hide orders.
   List<BillerOrder> get filtered {
-    final start = DateTime(from.year, from.month, from.day);
-    final end = DateTime(to.year, to.month, to.day, 23, 59, 59);
+    final startKey = _dayKey(from);
+    final endKey = _dayKey(to);
     return orders.where((order) {
       final created = _parseCreated(order.createdAt);
       if (created == null) return true;
-      final wib = toWib(created);
-      return !wib.isBefore(start) && !wib.isAfter(end);
+      final key = _dayKey(toWib(created));
+      return key >= startKey && key <= endKey;
     }).toList();
   }
+
+  int _dayKey(DateTime value) => value.year * 10000 + value.month * 100 + value.day;
 
   Map<String, List<BillerOrder>> get grouped {
     final formatter = DateFormat('d MMMM yyyy', 'id');
@@ -154,7 +162,8 @@ class _HistoryPageState extends State<HistoryPage> {
     final ora = context.ora;
     final dateFmt = DateFormat('d MMMM yyyy', 'id');
     final groups = grouped;
-    final holdList = orders.isEmpty && (loading || error != null);
+    final holdList = orders.isEmpty && (loading || (error != null && signedIn));
+    final outsideRange = signedIn && !loading && orders.isNotEmpty && groups.isEmpty;
 
     return ColoredBox(
       color: ora.bg,
@@ -226,8 +235,14 @@ class _HistoryPageState extends State<HistoryPage> {
                   color: ora.bg,
                   borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
                 ),
-                child: !signedIn || (!holdList && groups.isEmpty)
-                    ? const NoDataState()
+                child: !signedIn
+                    ? _SignedOutHistory(
+                        sessionExpired: sessionExpired,
+                        onSignIn: () async {
+                          final ok = await showSignInSheet(context);
+                          if (ok && mounted) _load();
+                        },
+                      )
                     : holdList
                         ? ListView(
                             padding: const EdgeInsets.fromLTRB(20, 22, 20, 28),
@@ -239,6 +254,13 @@ class _HistoryPageState extends State<HistoryPage> {
                               const _HistorySkeleton(),
                             ],
                           )
+                        : groups.isEmpty
+                            ? NoDataState(
+                                title: outsideRange ? 'Tidak ada di rentang ini' : 'Data Kosong',
+                                message: outsideRange
+                                    ? 'Ada ${orders.length} transaksi di luar tanggal yang dipilih. Lebarkan filter tanggal.'
+                                    : 'Belum ada transaksi di akun ini.',
+                              )
                         : RefreshIndicator(
                             onRefresh: _load,
                             child: ListView(
@@ -277,6 +299,49 @@ class _HistoryPageState extends State<HistoryPage> {
                             ),
                           ),
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SignedOutHistory extends StatelessWidget {
+  const _SignedOutHistory({
+    required this.sessionExpired,
+    required this.onSignIn,
+  });
+
+  final bool sessionExpired;
+  final Future<void> Function() onSignIn;
+
+  @override
+  Widget build(BuildContext context) {
+    final ora = context.ora;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            NoDataState(
+              title: sessionExpired ? 'Sesi berakhir' : 'Belum masuk',
+              message: sessionExpired
+                  ? 'Masuk lagi untuk melihat riwayat transaksi kamu.'
+                  : 'Masuk dulu supaya riwayat transaksi muncul di sini.',
+              illustrationHeight: 140,
+            ),
+            const SizedBox(height: 8),
+            FilledButton(
+              onPressed: onSignIn,
+              style: FilledButton.styleFrom(
+                backgroundColor: ora.lime,
+                foregroundColor: const Color(0xFF102018),
+                padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              child: const Text('Masuk'),
             ),
           ],
         ),

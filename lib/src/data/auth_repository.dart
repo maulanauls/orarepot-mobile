@@ -32,6 +32,7 @@ class AuthRepository {
   }
 
   /// Same contract as orappob `loginWithGoogle(code)` → `POST /biller/auth/google`.
+  /// Throws [GooglePhoneRequiredException] when the Google account has no WhatsApp number.
   Future<StoreAuth> loginWithGoogle({
     required String code,
     bool remember = true,
@@ -40,9 +41,33 @@ class AuthRepository {
       '/biller/auth/google',
       body: {'code': code.trim()},
     );
+    if (body['phone_required'] == true) {
+      throw GooglePhoneRequiredException(GooglePhoneRequired.fromJson(body));
+    }
+    if (body['otp_required'] == true) {
+      throw OtpRequiredException(OtpChallenge.fromJson(body));
+    }
     final auth = StoreAuth.fromJson(body);
     await _store.persist(auth, remember: remember);
     return auth;
+  }
+
+  /// Bind WhatsApp after Google when [GooglePhoneRequiredException] was thrown.
+  Future<OtpChallenge> bindGooglePhone({
+    required String pending,
+    required String phone,
+  }) async {
+    final body = await _api.postJson(
+      '/biller/auth/google/phone',
+      body: {
+        'pending': pending.trim(),
+        'phone': phone.trim(),
+      },
+    );
+    if (body['otp_required'] != true) {
+      throw ApiException('Respons OTP tidak valid.');
+    }
+    return OtpChallenge.fromJson(body);
   }
 
   Future<StoreAuth> register({

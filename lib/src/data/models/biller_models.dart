@@ -299,19 +299,27 @@ class OtpChallenge {
     required this.challenge,
     this.expiresIn = 300,
     this.resendIn = 60,
+    this.pending,
+    this.phone,
   });
 
   final String challenge;
   final int expiresIn;
   final int resendIn;
+  final String? pending;
+  final String? phone;
 
   factory OtpChallenge.fromJson(Map<String, dynamic> json) {
     int asInt(dynamic v, int fallback) =>
         v is num ? v.round() : int.tryParse('$v') ?? fallback;
+    final pending = '${json['pending'] ?? ''}'.trim();
+    final phone = '${json['phone'] ?? ''}'.trim();
     return OtpChallenge(
       challenge: '${json['challenge'] ?? ''}'.trim(),
       expiresIn: asInt(json['expires_in'], 300),
       resendIn: asInt(json['resend_in'], 60),
+      pending: pending.isEmpty ? null : pending,
+      phone: phone.isEmpty ? null : phone,
     );
   }
 }
@@ -322,4 +330,35 @@ class OtpRequiredException implements Exception {
 
   @override
   String toString() => 'OTP verification required';
+}
+
+/// Google account has no WhatsApp number — collect phone then OTP.
+class GooglePhoneRequired {
+  const GooglePhoneRequired({
+    required this.pending,
+    this.email,
+    this.expiresIn = 900,
+  });
+
+  final String pending;
+  final String? email;
+  final int expiresIn;
+
+  factory GooglePhoneRequired.fromJson(Map<String, dynamic> json) {
+    int asInt(dynamic v, int fallback) =>
+        v is num ? v.round() : int.tryParse('$v') ?? fallback;
+    return GooglePhoneRequired(
+      pending: '${json['pending'] ?? ''}'.trim(),
+      email: _stringField(json['email']),
+      expiresIn: asInt(json['expires_in'], 900),
+    );
+  }
+}
+
+class GooglePhoneRequiredException implements Exception {
+  GooglePhoneRequiredException(this.required);
+  final GooglePhoneRequired required;
+
+  @override
+  String toString() => 'Google phone required';
 }

@@ -52,6 +52,13 @@ class _Copy {
     required this.otpResendIn,
     required this.otpBack,
     required this.otpInvalid,
+    required this.phoneTitle,
+    required this.phoneSubtitle,
+    required this.phoneLabel,
+    required this.phonePh,
+    required this.phoneSubmit,
+    required this.phoneBack,
+    required this.phoneInvalid,
   });
 
   final String signInTitle;
@@ -86,6 +93,13 @@ class _Copy {
   final String otpResendIn;
   final String otpBack;
   final String otpInvalid;
+  final String phoneTitle;
+  final String phoneSubtitle;
+  final String phoneLabel;
+  final String phonePh;
+  final String phoneSubmit;
+  final String phoneBack;
+  final String phoneInvalid;
 }
 
 const _copyId = _Copy(
@@ -124,6 +138,14 @@ const _copyId = _Copy(
   otpResendIn: 'Kirim ulang ({sec})',
   otpBack: 'Ubah data',
   otpInvalid: 'Masukkan 6 angka kode dari WhatsApp.',
+  phoneTitle: 'Nomor WhatsApp',
+  phoneSubtitle:
+      'Akun Google belum punya nomor. Masukkan WhatsApp aktif untuk verifikasi OTP.',
+  phoneLabel: 'Nomor WhatsApp',
+  phonePh: '08xxxxxxxxxx',
+  phoneSubmit: 'Kirim OTP',
+  phoneBack: 'Batal',
+  phoneInvalid: 'Nomor WhatsApp minimal 9 digit.',
 );
 
 const _copyEn = _Copy(
@@ -161,6 +183,14 @@ const _copyEn = _Copy(
   otpResendIn: 'Resend ({sec})',
   otpBack: 'Edit details',
   otpInvalid: 'Enter the 6-digit code from WhatsApp.',
+  phoneTitle: 'WhatsApp number',
+  phoneSubtitle:
+      'Your Google account has no phone yet. Enter an active WhatsApp number for OTP.',
+  phoneLabel: 'WhatsApp number',
+  phonePh: '08xxxxxxxxxx',
+  phoneSubmit: 'Send OTP',
+  phoneBack: 'Cancel',
+  phoneInvalid: 'WhatsApp number needs at least 9 digits.',
 );
 
 /// Full-screen auth UI matching orappob `/sign-in` and `/register`.
@@ -182,6 +212,7 @@ class _AuthPageState extends State<AuthPage> {
   final passwordController = TextEditingController();
   final confirmController = TextEditingController();
   final otpController = TextEditingController();
+  final googlePhoneController = TextEditingController();
 
   bool obscure = true;
   bool obscureConfirm = true;
@@ -189,12 +220,14 @@ class _AuthPageState extends State<AuthPage> {
   bool submitting = false;
 
   OtpChallenge? otpChallenge;
+  GooglePhoneRequired? googlePhoneRequired;
   String otpPhoneHint = '';
   int resendIn = 0;
   Timer? _resendTimer;
 
   _Copy get t => lang == AuthLang.id ? _copyId : _copyEn;
   bool get _otpStep => otpChallenge != null;
+  bool get _phoneStep => googlePhoneRequired != null && !_otpStep;
 
   void _showError(String message, {VoidCallback? onRetry}) {
     showOraError(
@@ -248,6 +281,13 @@ class _AuthPageState extends State<AuthPage> {
     });
   }
 
+  void _cancelGooglePhone() {
+    hideOraBanner();
+    _cancelOtp();
+    googlePhoneController.clear();
+    setState(() => googlePhoneRequired = null);
+  }
+
   @override
   void dispose() {
     hideOraBanner();
@@ -257,6 +297,7 @@ class _AuthPageState extends State<AuthPage> {
     passwordController.dispose();
     confirmController.dispose();
     otpController.dispose();
+    googlePhoneController.dispose();
     super.dispose();
   }
 
@@ -387,6 +428,11 @@ class _AuthPageState extends State<AuthPage> {
 
   Future<void> _resendOtp() async {
     if (resendIn > 0 || submitting) return;
+    final pending = googlePhoneRequired;
+    if (pending != null) {
+      await _submitGooglePhone(resend: true);
+      return;
+    }
     final identifier = identifierController.text.trim();
     final password = passwordController.text;
     if (identifier.isEmpty || password.length < 8) {
@@ -424,6 +470,39 @@ class _AuthPageState extends State<AuthPage> {
     }
   }
 
+  Future<void> _submitGooglePhone({bool resend = false}) async {
+    final pending = googlePhoneRequired;
+    if (pending == null) return;
+    final phone = googlePhoneController.text.trim();
+    final digits = phone.replaceAll(RegExp(r'\D'), '');
+    FocusScope.of(context).unfocus();
+    if (digits.length < 9) {
+      _showError(t.phoneInvalid);
+      return;
+    }
+    setState(() => submitting = true);
+    final auth = AppScope.read(context).auth;
+    try {
+      final challenge = await auth.bindGooglePhone(
+        pending: pending.pending,
+        phone: phone,
+      );
+      if (!mounted) return;
+      _beginOtp(challenge, challenge.phone ?? phone);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => submitting = false);
+      _showError(e.message, onRetry: () => _submitGooglePhone(resend: resend));
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => submitting = false);
+      _showError(
+        lang == AuthLang.id ? 'Gagal kirim OTP. Coba lagi.' : 'Failed to send OTP. Try again.',
+        onRetry: () => _submitGooglePhone(resend: resend),
+      );
+    }
+  }
+
   void _switchMode() {
     hideOraBanner();
     _cancelOtp();
@@ -433,18 +512,28 @@ class _AuthPageState extends State<AuthPage> {
   }
 
   Future<void> _googleSignIn() async {
-    // Google sign-in skips the WhatsApp OTP challenge.
-    if (_otpStep) _cancelOtp();
+    if (_otpStep || _phoneStep) _cancelGooglePhone();
     FocusScope.of(context).unfocus();
     setState(() => submitting = true);
 
     final services = AppScope.read(context);
     try {
       final code = await GoogleAuth(services.config).requestCode();
-      await services.auth.loginWithGoogle(code: code);
+      await services.auth.loginWithGoogle(code: code, remember: remember);
       if (!mounted) return;
       hideOraBanner();
       Navigator.pop(context, true);
+    } on GooglePhoneRequiredException catch (e) {
+      if (!mounted) return;
+      hideOraBanner();
+      googlePhoneController.clear();
+      setState(() {
+        googlePhoneRequired = e.required;
+        submitting = false;
+      });
+    } on OtpRequiredException catch (e) {
+      if (!mounted) return;
+      _beginOtp(e.challenge, e.challenge.phone ?? '');
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() => submitting = false);
@@ -612,6 +701,80 @@ class _AuthPageState extends State<AuthPage> {
                               ),
                             ),
                           ],
+                        ),
+                      ] else if (_phoneStep) ...[
+                        Text(
+                          t.phoneTitle,
+                          style: GoogleFonts.poppins(
+                            fontSize: 32,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.8,
+                            color: ora.text,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          t.phoneSubtitle,
+                          style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            height: 1.45,
+                            color: ora.muted,
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        _FieldLabel(t.phoneLabel),
+                        const SizedBox(height: 6),
+                        TextField(
+                          controller: googlePhoneController,
+                          autofocus: true,
+                          keyboardType: TextInputType.phone,
+                          textInputAction: TextInputAction.done,
+                          onSubmitted: (_) => _submitGooglePhone(),
+                          style: GoogleFonts.poppins(color: ora.text),
+                          decoration: _inputDecoration(hint: t.phonePh),
+                        ),
+                        const SizedBox(height: 18),
+                        SizedBox(
+                          height: 52,
+                          child: FilledButton(
+                            onPressed: submitting ? null : () => _submitGooglePhone(),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: ora.lime,
+                              foregroundColor: ora.onLime,
+                              disabledBackgroundColor: ora.line,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  submitting ? '…' : t.phoneSubmit,
+                                  style: GoogleFonts.poppins(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                                if (!submitting) ...[
+                                  const SizedBox(width: 8),
+                                  const Icon(Icons.arrow_forward_rounded, size: 18),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        TextButton(
+                          onPressed: submitting ? null : _cancelGooglePhone,
+                          child: Text(
+                            t.phoneBack,
+                            style: GoogleFonts.poppins(
+                              color: ora.muted,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                          ),
                         ),
                       ] else ...[
                         Text(

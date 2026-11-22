@@ -347,9 +347,10 @@ class GooglePhoneRequired {
   factory GooglePhoneRequired.fromJson(Map<String, dynamic> json) {
     int asInt(dynamic v, int fallback) =>
         v is num ? v.round() : int.tryParse('$v') ?? fallback;
+    final email = '${json['email'] ?? ''}'.trim();
     return GooglePhoneRequired(
       pending: '${json['pending'] ?? ''}'.trim(),
-      email: _stringField(json['email']),
+      email: email.isEmpty ? null : email,
       expiresIn: asInt(json['expires_in'], 900),
     );
   }
